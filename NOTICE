@@ -1,0 +1,99 @@
+webp-go
+
+internal/vp8ldec (the VP8L decoder) follows the WebP lossless bitstream
+specification (RFC 9649) and ports from libwebp, BSD-3-Clause, copyright
+Google Inc.: the distance map and prefix-code reading (src/dec/vp8l_dec.c,
+src/utils/huffman_utils.c) and the predictor, cross-colour, subtract-green
+and colour-indexing inverse transforms (src/dsp/lossless.c). Its license is
+in internal/vp8l/LICENSE.libwebp.
+
+internal/vp8dec (the VP8 key frame decoder) follows RFC 6386 and ports from
+libwebp: the boolean decoder, header, token and mode parsing, quantizer setup
+(src/utils/bit_reader_utils.c, src/dec/vp8_dec.c, tree_dec.c, quant_dec.c), the
+intra predictors, inverse transforms and loop filters (src/dsp/dec.c), the
+reconstruction order and edge rules (src/dec/frame_dec.c), and the fancy
+chroma upsampler and YUV to RGB constants (src/dsp/upsampling.c, yuv.h,
+src/dec/io_dec.c). Its tables are shared with the encoder (internal/vp8enc).
+
+The ALPH chunk reader (internal/webp/decode.go) ports libwebp's alpha header
+checks and unfilters (src/dec/alpha_dec.c, src/dsp/filters.c).
+
+The encoder's ports (internal/vp8l, internal/vp8enc) are listed in the README.
+
+src/tables.rs holds RFC 6386 tables. The key frame sub-block mode probabilities (PRED_PROB)
+come from golang.org/x/image/vp8, which is under this licence:
+
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+src/fmath.rs ports Go's math package (pow.go, exp_amd64.s, log_amd64.s: Pow as amd64 with FMA
+computes it), Copyright 2009 The Go Authors, under the licence above.
+
+src/vp8enc (the VP8 key frame encoder) ports libwebp, BSD-3-Clause, copyright Google Inc.: the
+boolean writer (src/utils/bit_writer_utils.c), the header and mode writers (src/enc/syntax_enc.c,
+tree_enc.c), quantisation, rate-distortion search and trellis (src/enc/quant_enc.c,
+src/dsp/cost.c, src/enc/cost_enc.c), segment analysis (src/enc/analysis_enc.c), the token loop
+and probability finalisation (src/enc/frame_enc.c, token_enc.c, filter_enc.c), the forward
+transforms (src/dsp/enc.c) and the RGB to YUV conversion (src/enc/picture_csp_enc.c,
+src/dsp/yuv.c). Its inverse transforms and intra predictors follow golang.org/x/image/vp8, under
+the licence above. Its licence is in LICENSE.libwebp.
+
+src/vp8l (the VP8L encoder for ALPH chunks) ports libwebp 1.2.2, BSD-3-Clause, copyright Google
+Inc.: the lossless encoder (src/enc/vp8l_enc.c, backward_references_enc.c,
+backward_references_cost_enc.c, histogram_enc.c, predictor_enc.c), its Huffman writer
+(src/utils/huffman_encode_utils.c), the entropy helpers and predictors (src/dsp/lossless_enc.c,
+lossless.c, lossless_common.h) and the ALPH wrapper and filters (src/enc/alpha_enc.c,
+src/utils/filters_utils.c, src/dsp/filters.c). Its clog is Go's math.Log. Its licence is in
+LICENSE.libwebp.
+
+src/gosort.rs ports Go's slices.SortFunc (pdqsort, zsortanyfunc.go, Copyright 2009 The Go Authors)
+under the licence above, so ties sort as in Go.
+
+src/simd/enc_collect.rs and src/simd/enc_chroma.rs (with their avx2 and neon files) are SIMD forms
+of libwebp, BSD-3-Clause, copyright Google Inc.: the segment analysis histogram and alpha
+(CollectHistogram_C in src/dsp/enc.c, GetAlpha in src/enc/analysis_enc.c) and the gamma-corrected
+2x2 chroma average (src/dsp/yuv.c, src/enc/picture_csp_enc.c). Their licence is in LICENSE.libwebp.
+
+src/simd/enc_cost.rs, enc_pred.rs, enc_i4.rs and enc_block.rs (with their avx2 and neon files) are
+SIMD forms of libwebp, BSD-3-Clause, copyright Google Inc.: GetResidualCost (src/dsp/cost.c,
+src/enc/cost_enc.c), FTransform, QuantizeBlock and ITransform (src/dsp/enc.c), and the intra
+predictors and TTransform (src/dsp/enc.c). Their licence is in LICENSE.libwebp.
+
+src/simd/scalar.rs, src/simd/avx2.rs and src/simd/neon.rs (luma_row) are forms of libwebp,
+BSD-3-Clause, copyright Google Inc.: VP8RGBToY (src/dsp/yuv.h), with its coefficients. Their licence
+is in LICENSE.libwebp.
+
+src/decode.rs (unfilter) ports libwebp's ALPH unfilters and header checks, BSD-3-Clause, copyright
+Google Inc.: HorizontalUnfilter, VerticalUnfilter and GradientUnfilter (src/dsp/filters.c) and
+the alpha header checks (src/dec/alpha_dec.c). Its licence is in LICENSE.libwebp.
+
+Where this NOTICE says internal/webp, internal/vp8l, internal/vp8enc, internal/vp8ldec or
+internal/vp8dec, the Rust files are src/decode.rs (and riff.rs), src/vp8l, src/vp8enc, src/vp8ldec
+and src/vp8dec; the libwebp licence text is in LICENSE.libwebp.
+
+This crate is a Rust port of github.com/dobbo-ca/webp-go (Apache-2.0); the Go source it ports is vendored in tests/parity/go/upstream.

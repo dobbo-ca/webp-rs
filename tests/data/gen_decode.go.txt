@@ -1,0 +1,94 @@
+// Writes the small PNG inputs of gen_decode.sh into the directory in
+// os.Args[1]; tests/data/kodim05_192.png is read from os.Args[2].
+package main
+
+import (
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
+	"math/rand"
+	"os"
+	"path/filepath"
+)
+
+func save(dir, name string, m image.Image) {
+	f, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		panic(err)
+	}
+	if err := png.Encode(f, m); err != nil {
+		panic(err)
+	}
+	f.Close()
+}
+
+func main() {
+	dir := os.Args[1]
+	f, err := os.Open(os.Args[2])
+	if err != nil {
+		panic(err)
+	}
+	src, err := png.Decode(f)
+	if err != nil {
+		panic(err)
+	}
+	// 97 x 61: widths and heights that are not tile multiples.
+	photo := image.NewNRGBA(image.Rect(0, 0, 97, 61))
+	draw.Draw(photo, photo.Bounds(), src, image.Pt(40, 30), draw.Src)
+	save(dir, "photo.png", photo)
+
+	// The photo with a soft radial alpha, for lossy files with ALPH.
+	pa := image.NewNRGBA(photo.Bounds())
+	for y := 0; y < 61; y++ {
+		for x := 0; x < 97; x++ {
+			c := photo.NRGBAAt(x, y)
+			dx, dy := x-48, y-30
+			c.A = uint8(max(0, 255-(dx*dx+dy*dy)/5))
+			pa.SetNRGBA(x, y, c)
+		}
+	}
+	save(dir, "photoa.png", pa)
+
+	rng := rand.New(rand.NewSource(7))
+	for _, n := range []int{2, 3, 4, 13, 16, 200} {
+		pal := make([]color.NRGBA, n)
+		for i := range pal {
+			pal[i] = color.NRGBA{uint8(rng.Intn(256)), uint8(rng.Intn(256)), uint8(rng.Intn(256)), 255}
+		}
+		m := image.NewNRGBA(image.Rect(0, 0, 53, 29))
+		for y := 0; y < 29; y++ {
+			for x := 0; x < 53; x++ {
+				m.SetNRGBA(x, y, pal[(x/3+y/2+rng.Intn(2))%n])
+			}
+		}
+		save(dir, "pal"+string(rune('a'+len(pal)%26))+".png", m)
+	}
+
+	a := image.NewNRGBA(image.Rect(0, 0, 70, 40))
+	for y := 0; y < 40; y++ {
+		for x := 0; x < 70; x++ {
+			a.SetNRGBA(x, y, color.NRGBA{uint8(x * 3), uint8(y * 6), uint8(x ^ y), uint8(x*y/11 + 5)})
+		}
+	}
+	save(dir, "alpha.png", a)
+
+	// Long repeats and copies from the row above.
+	r := image.NewNRGBA(image.Rect(0, 0, 120, 30))
+	for y := 0; y < 30; y++ {
+		for x := 0; x < 120; x++ {
+			v := uint8((x/10 + y/5) * 37)
+			r.SetNRGBA(x, y, color.NRGBA{v, v ^ 0x55, uint8(y), 255})
+		}
+	}
+	save(dir, "runs.png", r)
+
+	// A single pixel and a single row and column.
+	for _, d := range [][2]int{{1, 1}, {1, 9}, {9, 1}} {
+		m := image.NewNRGBA(image.Rect(0, 0, d[0], d[1]))
+		for i := range m.Pix {
+			m.Pix[i] = uint8(i*91 + 3)
+		}
+		save(dir, "tiny"+string(rune('0'+d[0]))+string(rune('0'+d[1]))+".png", m)
+	}
+}

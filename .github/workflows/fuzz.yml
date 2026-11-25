@@ -1,0 +1,126 @@
+name: fuzz
+on:
+  schedule: [{ cron: '23 18 * * 2' }]
+  workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: Seconds per target
+        default: '600'
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target: [decode, metadata, encode, encode_limits, encode_reuse, simd]
+        # `scalar` (WEBP_SIMD=scalar) runs the encoder on its scalar kernels, which AVX2 hides on this
+        # runner. The decoders have no SIMD, and the simd target runs every tier itself.
+        simd: [default, scalar]
+        exclude:
+          - { target: decode, simd: scalar }
+          - { target: metadata, simd: scalar }
+          - { target: simd, simd: scalar }
+    timeout-minutes: 60
+    env:
+      MAX_TOTAL_TIME: ${{ inputs.max_total_time || '600' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { lfs: false }
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: .github/ci/Dockerfile
+          target: fuzz
+          load: true
+          push: false
+          tags: webp-fuzz:local
+          cache-from: type=gha,scope=webp-rs-fuzz
+          cache-to: type=gha,mode=max,scope=webp-rs-fuzz
+      # The corpus is kept between runs: restored here, copied into the container, copied back
+      # out and saved, so a run goes on from where the last one stopped. One cache per target and
+      # SIMD mode; the newest is restored.
+      - id: corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: corpus
+          key: fuzz-corpus-${{ matrix.target }}-${{ matrix.simd }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-${{ matrix.simd }}-
+      # docker create + start, not a RUN layer: a BuildKit cache hit would skip the fuzzing.
+      # Seeds: the webp-go fixtures (tests/data) for decode; for metadata the same with a 2-byte max
+      # (0xFFFF) in front, plus tests/fuzz/seeds/metadata (Go's FuzzMetadata seeds); new
+      # inputs go to the first corpus dir. -malloc_limit_mb is the backstop: the targets pass
+      # limits that keep an allocation within it.
+      - run: |
+          mkdir -p corpus/${{ matrix.target }}
+          docker create --name fuzz -e MAX_TOTAL_TIME -e TARGET=${{ matrix.target }} -e WEBP_SIMD=${{ matrix.simd == 'scalar' && 'scalar' || 'auto' }} -e "SEEDS=${{ matrix.target == 'decode' && 'tests/data tests/fuzz/seeds/decode' || matrix.target == 'metadata' && '/mseeds tests/fuzz/seeds/metadata' || matrix.target == 'encode_reuse' && 'tests/fuzz/seeds/encode_reuse' || '' }}" -e MAX_LEN=${{ contains('decode metadata', matrix.target) && '131072' || matrix.target == 'simd' && '262144' || '4096' }} webp-fuzz:local \
+            sh -c 'mkdir /mseeds && for f in tests/data/*.webp; do { printf "\\377\\377"; cat $f; } > /mseeds/$(basename $f); done; cargo +nightly fuzz run --fuzz-dir tests/fuzz $TARGET tests/fuzz/corpus/$TARGET $SEEDS -- -max_total_time=$MAX_TOTAL_TIME -max_len=$MAX_LEN -timeout=20 -rss_limit_mb=2048 -malloc_limit_mb=512'
+          docker cp corpus fuzz:/src/tests/fuzz/
+          docker start -a fuzz
+      - if: failure()
+        run: docker cp fuzz:/src/tests/fuzz/artifacts/${{ matrix.target }} ./crashers
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crashers-${{ matrix.target }}-${{ matrix.simd }}
+          path: crashers
+      - if: always()
+        run: docker cp fuzz:/src/tests/fuzz/corpus/${{ matrix.target }}/. corpus/${{ matrix.target }}/ || true
+      - if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: corpus
+          key: fuzz-corpus-${{ matrix.target }}-${{ matrix.simd }}-${{ github.run_id }}
+
+  # The NEON kernels: the simd target on a native arm64 runner.
+  fuzz-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      MAX_TOTAL_TIME: ${{ inputs.max_total_time || '600' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { lfs: false }
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: .github/ci/Dockerfile
+          target: fuzz
+          load: true
+          push: false
+          tags: webp-fuzz-arm64:local
+          cache-from: type=gha,scope=webp-rs-fuzz-arm64
+          cache-to: type=gha,mode=max,scope=webp-rs-fuzz-arm64
+      # The corpus is kept between runs, as in the job above.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: corpus
+          key: fuzz-corpus-simd-arm64-${{ github.run_id }}
+          restore-keys: fuzz-corpus-simd-arm64-
+      - run: |
+          mkdir -p corpus/simd
+          docker create --name fuzz -e MAX_TOTAL_TIME -e TARGET=simd webp-fuzz-arm64:local \
+            sh -c 'cargo +nightly fuzz run --fuzz-dir tests/fuzz $TARGET tests/fuzz/corpus/$TARGET -- -max_total_time=$MAX_TOTAL_TIME -max_len=262144 -timeout=20 -rss_limit_mb=2048 -malloc_limit_mb=512'
+          docker cp corpus fuzz:/src/tests/fuzz/
+          docker start -a fuzz
+      - if: failure()
+        run: docker cp fuzz:/src/tests/fuzz/artifacts/simd ./crashers
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crashers-simd-arm64
+          path: crashers
+      - if: always()
+        run: docker cp fuzz:/src/tests/fuzz/corpus/simd/. corpus/simd/ || true
+      - if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: corpus
+          key: fuzz-corpus-simd-arm64-${{ github.run_id }}

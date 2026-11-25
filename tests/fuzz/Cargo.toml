@@ -1,0 +1,57 @@
+[package]
+name = "webp-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+webp = { path = "../.." }
+
+# Not part of the root package: only this crate may depend on libfuzzer-sys.
+[workspace]
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata"
+path = "fuzz_targets/metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encode"
+path = "fuzz_targets/encode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encode_limits"
+path = "fuzz_targets/encode_limits.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "simd"
+path = "fuzz_targets/simd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encode_reuse"
+path = "fuzz_targets/encode_reuse.rs"
+test = false
+doc = false
+bench = false

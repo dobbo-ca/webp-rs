@@ -1,0 +1,22 @@
+[package]
+name = "webp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+description = "WebP codec: lossy VP8 encoder, VP8/VP8L decoder. Rust port of dobbo-ca/webp-go."
+publish = false
+
+[dependencies]
+# Worker pool: the caller's or the crate's lazy shared one. See docs/dependencies.md.
+rayon = "1.12"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
+
+[profile.test]
+opt-level = 2
+
+[profile.release]
+codegen-units = 1
+lto = "fat"

@@ -1,0 +1,21 @@
+webp-go
+
+internal/vp8ldec (the VP8L decoder) follows the WebP lossless bitstream
+specification (RFC 9649) and ports from libwebp, BSD-3-Clause, copyright
+Google Inc.: the distance map and prefix-code reading (src/dec/vp8l_dec.c,
+src/utils/huffman_utils.c) and the predictor, cross-colour, subtract-green
+and colour-indexing inverse transforms (src/dsp/lossless.c). Its license is
+in internal/vp8l/LICENSE.libwebp.
+
+internal/vp8dec (the VP8 key frame decoder) follows RFC 6386 and ports from
+libwebp: the boolean decoder, header, token and mode parsing, quantizer setup
+(src/utils/bit_reader_utils.c, src/dec/vp8_dec.c, tree_dec.c, quant_dec.c), the
+intra predictors, inverse transforms and loop filters (src/dsp/dec.c), the
+reconstruction order and edge rules (src/dec/frame_dec.c), and the fancy
+chroma upsampler and YUV to RGB constants (src/dsp/upsampling.c, yuv.h,
+src/dec/io_dec.c). Its tables are shared with the encoder (internal/vp8enc).
+
+The ALPH chunk reader (internal/webp/decode.go) ports libwebp's alpha header
+checks and unfilters (src/dec/alpha_dec.c, src/dsp/filters.c).
+
+The encoder's ports (internal/vp8l, internal/vp8enc) are listed in the README.

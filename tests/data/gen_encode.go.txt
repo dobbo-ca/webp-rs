@@ -1,0 +1,29 @@
+// Encodes the PNG in os.Args[1] with this repo's encoder (non-libwebp path:
+// two token partitions, skip flags) to os.Args[2].
+package main
+
+import (
+	"bytes"
+	"image/png"
+	"os"
+
+	webp "github.com/dobbo-ca/webp-go"
+)
+
+func main() {
+	f, err := os.Open(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	m, err := png.Decode(f)
+	if err != nil {
+		panic(err)
+	}
+	var b bytes.Buffer
+	if err := webp.Encode(&b, m, &webp.Options{Quality: 70, Method: 4}); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(os.Args[2], b.Bytes(), 0o644); err != nil {
+		panic(err)
+	}
+}
