@@ -8,14 +8,17 @@ encoder: the RGBA to luma row and the sum of squared differences of a prediction
 kernels of Go's assembly, in groups (`enc_i4` i4 mode trials, `enc_pred` predictor SSE, `enc_block`
 fdct, quantizer and IDCT, `enc_collect` analysis bins, `enc_chroma` chroma rows, `enc_cost` rate costs). The tier is
 picked once at first use by runtime detection; `WEBP_SIMD=scalar` forces the scalar one and
-`WEBP_SIMD=avx2` rules out AVX-512 (so the bench can compare the two). The
+`WEBP_SIMD=avx2` rules out AVX-512 (so the bench can compare the two); `WEBP_SIMD=avx512` requires it
+and panics on a CPU without AVX-512 F, BW and VL, for CI under an emulator. The
 kernels are safe `#[target_feature]` functions with no `unsafe` inside. `unsafe` is in two small
 places per tier: the load/store helpers (`src/simd/avx2/mem.rs`, `avx512/mem.rs`, `neon/mem.rs`, whose
 array-reference parameter types prove the bounds) and the dispatch next to the CPU detection, which
 calls the kernels after the feature check. The tests run every detected tier against scalar, bit
 for bit, on random and extreme inputs and every edge length, and assert that AVX2 (x86_64) or NEON
 (aarch64) was detected. CI runs the suite with both tiers on x86_64 and, on a native arm64
-runner, on aarch64, and lints the aarch64 target. The `simd` fuzz target checks every kernel the same way.
+runner, on aarch64, and lints the aarch64 target. The AVX-512 kernels run natively when the hosted
+runner has AVX-512, and always under Intel SDE (job `avx512-sde`: the unit tests on `-spr` with
+`WEBP_SIMD=avx512`). The `simd` fuzz target checks every kernel the same way.
 
 ## The AVX-512 tier
 

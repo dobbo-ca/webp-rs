@@ -1,6 +1,7 @@
 //! SIMD kernels, each beside its scalar reference: AVX2 and AVX-512 on x86_64, NEON on aarch64. The
 //! tier is picked once, at first use, from the CPU; `WEBP_SIMD=scalar` forces the scalar one and
-//! `WEBP_SIMD=avx2` rules out AVX-512. The AVX-512 tier (`avx512.rs`) holds only the kernels that
+//! `WEBP_SIMD=avx2` rules out AVX-512; `WEBP_SIMD=avx512` requires it and panics on a CPU without
+//! it (for CI under an emulator). The AVX-512 tier (`avx512.rs`) holds only the kernels that
 //! gain from 512-bit registers and takes every other kernel from AVX2.
 //!
 //! The first kernels are the RGBA to luma row of the encoder's colour conversion and the sum of
@@ -76,16 +77,45 @@ pub(crate) fn scalar_forced() -> bool {
     *F.get_or_init(|| std::env::var_os("WEBP_SIMD").is_some_and(|v| v == "scalar"))
 }
 
+/// Whether the AVX-512 kernels run here: false on a target without them.
+fn avx512_kernels() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        avx512::detect().is_some()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Whether `WEBP_SIMD=avx512` requires the AVX-512 tier (for CI under an emulator). It panics on a
+/// CPU without the AVX-512 kernels, so a test run cannot fall back to AVX2 without a word. Read once.
+fn avx512_forced() -> bool {
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        let forced = std::env::var_os("WEBP_SIMD").is_some_and(|v| v == "avx512");
+        assert!(
+            !forced || avx512_kernels(),
+            "WEBP_SIMD=avx512, but this CPU lacks AVX-512 F, BW and VL"
+        );
+        forced
+    })
+}
+
 /// Whether the AVX-512 tier may be picked: `WEBP_SIMD=avx2` rules it out. Read once.
 #[cfg(target_arch = "x86_64")]
 fn avx512_wanted() -> bool {
     static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| !std::env::var_os("WEBP_SIMD").is_some_and(|v| v == "avx2"))
+    *F.get_or_init(|| {
+        avx512_forced() || !std::env::var_os("WEBP_SIMD").is_some_and(|v| v == "avx2")
+    })
 }
 
 fn selected() -> Kernels {
     static K: OnceLock<Kernels> = OnceLock::new();
     *K.get_or_init(|| {
+        avx512_forced();
         if scalar_forced() {
             SCALAR
         } else {
@@ -198,11 +228,25 @@ mod tests {
         (*state >> 24) as u8
     }
 
-    /// `luma_row` and `sse_row` run the SIMD tier unless `WEBP_SIMD=scalar` says otherwise.
+    /// `luma_row` and `sse_row` run the SIMD tier unless `WEBP_SIMD=scalar` says otherwise. Also
+    /// logs the tier in use (`--nocapture`), so a CI log shows what the run tested.
     #[test]
     fn dispatch_picks_tier() {
         let scalar = std::env::var_os("WEBP_SIMD").is_some_and(|v| v == "scalar");
         let sel = selected();
+        // The tier in use: the last of `tiers()` whose kernels `selected` holds, else scalar.
+        let in_use = tiers()
+            .into_iter()
+            .rev()
+            .find(|(_, k)| k.luma_row as usize == sel.luma_row as usize)
+            .map_or("scalar", |(name, _)| name);
+        eprintln!("SIMD tier: {in_use}, AVX-512 kernels: {}", avx512_kernels());
+        if std::env::var_os("WEBP_SIMD").is_some_and(|v| v == "avx512") {
+            assert_eq!(
+                in_use, "avx512",
+                "WEBP_SIMD=avx512, but the tier in use differs"
+            );
+        }
         assert_eq!(
             sel.luma_row as usize == SCALAR.luma_row as usize,
             scalar || detect().is_none()
