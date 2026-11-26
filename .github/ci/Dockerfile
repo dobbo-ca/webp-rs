@@ -27,8 +27,10 @@ RUN --mount=type=cache,id=webp-target,target=/src/target \
 # Lint the aarch64 target too: the NEON modules are not compiled for x86_64.
 RUN --mount=type=cache,id=webp-target,target=/src/target \
     cargo clippy --locked --all-targets --target aarch64-unknown-linux-gnu -- -D warnings
+# The second run prints the tier the tests used ("SIMD tier: ..."), so the log shows what was tested.
 RUN --mount=type=cache,id=webp-target,target=/src/target \
-    cargo test --locked
+    cargo test --locked \
+    && cargo test --locked --lib -- --nocapture dispatch_picks_tier
 RUN --mount=type=cache,id=webp-target,target=/src/target \
     WEBP_SIMD=scalar cargo test --locked
 RUN --mount=type=cache,id=webp-target,target=/src/target \
@@ -50,7 +52,8 @@ RUN --mount=type=cache,id=webp-target-v4,sharing=locked,target=/src/target \
 FROM src AS arm64
 RUN --mount=type=cache,id=webp-target,target=/src/target \
     cargo test --locked --lib -- simd:: fmath:: \
-    && cargo test --locked --test encode
+    && cargo test --locked --test encode \
+    && cargo test --locked --lib -- --nocapture dispatch_picks_tier
 RUN --mount=type=cache,id=webp-target,target=/src/target \
     WEBP_SIMD=scalar cargo test --locked --lib -- simd:: fmath:: \
     && WEBP_SIMD=scalar cargo test --locked --test encode

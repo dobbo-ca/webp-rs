@@ -9,6 +9,7 @@ jobs:
   # The checks run inside .github/ci/Dockerfile under BuildKit on a GitHub-hosted runner; the layers
   # are saved to the Actions cache (one scope per job). The arm64 jobs run on native arm64 runners.
   # A PR needs only `test`; arm64, parity and parity-arm64 run on main and on workflow_dispatch.
+  # avx512-sde (no Docker) runs on every event.
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -27,6 +28,48 @@ jobs:
           # Only main and dispatch runs export: a PR's cache is scoped to its ref, so no other PR
           # could read it, and the export takes about two minutes.
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max,scope=webp-rs-test' || '' }}
+
+  # The AVX-512 kernels under Intel SDE, which emulates a Sapphire Rapids CPU (-spr): a hosted
+  # runner can lack AVX-512, and then `test` runs only the AVX2 kernels. The unit tests hold the
+  # kernel tests and the cross-tier tests (every tier against scalar); WEBP_SIMD=avx512 makes them
+  # fail if the AVX-512 kernels are not detected. SDE comes from Intel's site, pinned by version
+  # and sha256. The build runs natively; only the test binaries run under SDE.
+  avx512-sde:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-lin.tar.xz
+      SDE_SHA256: 94e97d623fec54385686e1e7ba65ebc9941748c05ee451423948334892bf2b50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { lfs: false, persist-credentials: false }
+      - name: Install Intel SDE
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/sde.tar.xz" "$SDE_URL"
+          echo "$SDE_SHA256  $RUNNER_TEMP/sde.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/sde"
+          tar -xJf "$RUNNER_TEMP/sde.tar.xz" -C "$RUNNER_TEMP/sde" --strip-components=1
+          # Pin (under SDE) attaches to the test process with ptrace.
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+      - name: Unit tests under SDE (-spr, WEBP_SIMD=avx512)
+        env:
+          WEBP_SIMD: avx512
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ runner.temp }}/sde/sde64 -spr --
+        run: |
+          cargo test --locked --release --lib
+          cargo test --locked --release --lib -- --nocapture dispatch_picks_tier
+      # A forced tier that the CPU lacks must fail: the same test on a Haswell (AVX2, no AVX-512).
+      - name: WEBP_SIMD=avx512 fails without AVX-512 (-hsw)
+        env:
+          WEBP_SIMD: avx512
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ runner.temp }}/sde/sde64 -hsw --
+        run: |
+          log="$RUNNER_TEMP/hsw.log"
+          cargo test --locked --release --lib -- --nocapture dispatch_picks_tier > "$log" 2>&1 \
+            && { cat "$log"; echo "WEBP_SIMD=avx512 passed on a CPU without AVX-512"; exit 1; }
+          cat "$log"
+          # The failure must be the assert, not some other error.
+          grep -q 'WEBP_SIMD=avx512, but' "$log"
 
   arm64:
     if: github.event_name != 'pull_request'
